@@ -436,33 +436,19 @@ These are measurements from a single local benchmark run. Actual performance can
 
 
 
-The following are conceptual cost estimates. Actual performance depends on database indexes, storage, transaction overhead, and implementation details.
-
-
-
 | Strategy | Main work | Approximate cost |
-
 |---|---|---|
-
 | Full Refresh | Delete and insert all N records | O(N), plus index maintenance |
-
-| Incremental Merge | Process Δ new or changed records and perform key lookups | Approximately O(Δ log N) for indexed key operations |
-
+| Incremental Merge | Process D new or changed records and perform key lookups | Approximately O(D log N) for indexed key operations |
 | Partition Replacement | Replace R records across affected partitions | Approximately O(P + R log N), depending on partition lookup and indexing |
-
-
 
 Where:
 
-
-
 - N = total records in the dataset.
-
-- Δ = number of new and changed records.
-
+- D = number of new and changed records.
 - P = number of affected partitions.
-
 - R = total records in the affected partition snapshots.
+
 
 
 
@@ -513,42 +499,34 @@ Deletion and insertion of affected partitions happen within one transaction. If 
 However, the source must provide complete snapshots for affected partitions. An incomplete snapshot can remove records that are absent from the supplied snapshot.
 
 
-
 ## 11. Automated Testing
-
-
 
 Automated tests were implemented using Python's `unittest` framework.
 
+The test suite contains 15 tests across two test modules.
 
+### Data Cleaning Tests (5)
 
-The test suite contains 10 tests covering:
+- Duplicate customer detection.
+- Invalid order validation.
+- Invalid order status validation.
+- Missing customer ID validation.
+- Valid customer records.
 
-
+### Publishing Strategy Tests (10)
 
 - Full Refresh publishing.
-
 - Incremental insertion of new records.
-
 - Updating records with newer timestamps.
-
 - Ignoring records with older timestamps.
-
 - Preserving unaffected partitions.
-
 - Transaction rollback during failures.
-
 - Handling duplicate order IDs in the same batch.
-
 - Incremental Merge rollback.
-
 - Partition Replacement rollback.
-
 - Retry after failure and idempotent reruns.
 
-
-
-**Test result:** All 10 automated tests passed.
+**Test result:** All 15 automated tests passed.
 
 
 
