@@ -56,7 +56,9 @@ data_pipeline_comparison/
 │   └── schema.py
 ├── tests/
 │   ├── test_cleaning.py
-│   └── test_publish_strategies.py
+│   ├── test_ingestion.py
+│   ├── test_publish_strategies.py
+│   └── test_run_tracking.py
 ├── requirements.txt
 ├── README.md
 └── .gitignore
@@ -163,19 +165,30 @@ Execute the complete test suite:
 python -m unittest discover -s tests -v
 ```
 
-The test suite contains **15 automated tests** covering:
+The test suite contains **24 automated tests** covering:
 
 - Data cleaning and validation.
-- Duplicate customer detection.
-- Invalid order handling.
+- Duplicate and invalid record handling.
+- Input schema validation.
 - Full Refresh publishing.
-- Incremental inserts and updates.
-- Timestamp-based update validation.
+- Incremental inserts and timestamp-based updates.
 - Partition replacement.
 - Transaction rollback.
 - Retry and idempotency behaviour.
+- Pipeline run tracking and rejected-record logging.
+All 24 tests passed in the recorded test run.
 
-All 15 tests passed in the recorded test run.
+## Pipeline Run Tracking and Observability
+
+The project maintains pipeline execution history using SQLite.
+
+- Tracks pipeline run IDs, names, statuses, and timestamps.
+- Records input, inserted, updated, and rejected record counts.
+- Stores error messages for failed pipeline runs.
+- Maintains rejected-record details, including source file, row number, record type, and rejection reason.
+- Uses UTC timestamps for execution tracking.
+
+This provides traceability and helps monitor pipeline execution.
 
 ## Reports and Documentation
 
