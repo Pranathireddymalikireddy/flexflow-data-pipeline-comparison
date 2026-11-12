@@ -90,7 +90,7 @@ The strategies receive the appropriate input:
 Clone the repository:
 
 ```bash
-git clone YOUR_GITHUB_REPOSITORY_URL
+ git clone https://github.com/Pranathireddymalikireddy/flexflow-data-pipeline-comparison.git
 ```
 
 Navigate to the project directory:
@@ -118,6 +118,7 @@ pip install -r requirements.txt
 ```
 
 ## Run the Benchmarks
+  
 
 Run the initial-load scalability benchmark:
 
@@ -132,6 +133,12 @@ python -m src.incremental_workload_benchmark
 ```
 
 The benchmark results are saved in the `reports/` directory.
+## Run the Performance Dashboard
+
+After generating the benchmark reports, launch the Streamlit dashboard:
+
+```bash
+streamlit run app.py
 
 ## Run Automated Tests
 
