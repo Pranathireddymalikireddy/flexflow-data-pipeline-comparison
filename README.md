@@ -26,6 +26,7 @@ The project evaluates these strategies using synthetic customer and order datase
 - NumPy
 - SQLite
 - Matplotlib
+- Streamlit
 - Unit testing with Python `unittest`
 
 ## Project Structure
@@ -70,75 +71,89 @@ The project evaluates four dataset sizes:
 - 50,000 orders
 - 100,000 orders
 
-Two benchmark scenarios are implemented:
+Two benchmark scenarios are implemented.
 
-### 1. Initial-load scalability benchmark
+### 1. Initial-Load Scalability Benchmark
 
 Compares the three strategies when publishing datasets into empty target databases.
 
-### 2. Realistic incremental workload benchmark
+### 2. Realistic Incremental Workload Benchmark
 
 Simulates an existing dataset with updated records, newly inserted records, and changes across selected date partitions.
 
 The strategies receive the appropriate input:
-- Full Refresh receives the complete final dataset.
-- Incremental Merge receives updated and new records.
-- Partition Replacement receives complete snapshots of affected partitions.
+
+- **Full Refresh:** Receives the complete final dataset.
+- **Incremental Merge:** Receives updated and new records.
+- **Partition Replacement:** Receives complete snapshots of affected partitions.
 
 ## Installation
 
-Clone the repository:
+### 1. Clone the Repository
 
 ```bash
- git clone https://github.com/Pranathireddymalikireddy/flexflow-data-pipeline-comparison.git
+git clone https://github.com/Pranathireddymalikireddy/flexflow-data-pipeline-comparison.git
 ```
 
-Navigate to the project directory:
+### 2. Navigate to the Project Directory
 
 ```bash
-cd data_pipeline_comparison
+cd flexflow-data-pipeline-comparison
 ```
 
-Create and activate a virtual environment:
+### 3. Create a Virtual Environment
 
 ```bash
 python -m venv venv
 ```
 
-Windows activation:
+### 4. Activate the Virtual Environment
 
-```bash
+For Windows Command Prompt:
+
+```cmd
 venv\Scripts\activate
 ```
 
-Install dependencies:
+### 5. Install Dependencies
 
 ```bash
 pip install -r requirements.txt
 ```
 
 ## Run the Benchmarks
-  
 
-Run the initial-load scalability benchmark:
+### 1. Initial-Load Scalability Benchmark
 
 ```bash
 python -m src.scalability_benchmark
 ```
 
-Run the realistic incremental workload benchmark:
+### 2. Realistic Incremental Workload Benchmark
 
 ```bash
 python -m src.incremental_workload_benchmark
 ```
 
 The benchmark results are saved in the `reports/` directory.
+
 ## Run the Performance Dashboard
 
 After generating the benchmark reports, launch the Streamlit dashboard:
 
 ```bash
 streamlit run app.py
+```
+
+The dashboard provides:
+
+- Initial-load scalability comparison.
+- Realistic incremental workload comparison.
+- Execution-time and throughput charts.
+- Affected partition analysis.
+- Correctness validation.
+- Detailed benchmark results.
+- Downloadable benchmark reports.
 
 ## Run Automated Tests
 
@@ -148,13 +163,27 @@ Execute the complete test suite:
 python -m unittest discover -s tests -v
 ```
 
-The tests cover data cleaning, inserts, updates, duplicate handling, partition replacement, transaction rollback, and retry behaviour.
+The test suite contains **15 automated tests** covering:
+
+- Data cleaning and validation.
+- Duplicate customer detection.
+- Invalid order handling.
+- Full Refresh publishing.
+- Incremental inserts and updates.
+- Timestamp-based update validation.
+- Partition replacement.
+- Transaction rollback.
+- Retry and idempotency behaviour.
+
+All 15 tests passed in the recorded test run.
 
 ## Reports and Documentation
 
-- `reports/strategy_scalability.csv` – Initial-load benchmark results.
-- `reports/incremental_workload_comparison.csv` – Realistic incremental workload results.
-- `docs/strategy_comparison.md` – Detailed methodology, results, complexity analysis, failure recovery, limitations, and recommendations.
+| File | Description |
+|---|---|
+| `reports/strategy_scalability.csv` | Initial-load benchmark results |
+| `reports/incremental_workload_comparison.csv` | Realistic incremental workload results |
+| `docs/strategy_comparison.md` | Detailed methodology, benchmark results, complexity analysis, failure recovery, limitations, and recommendations |
 
 ## Key Findings
 
@@ -162,11 +191,19 @@ In the realistic incremental workload benchmark, Incremental Merge achieved the 
 
 At 100,000 orders:
 
-- Full Refresh: approximately 2.149 seconds.
-- Incremental Merge: approximately 1.037 seconds.
-- Partition Replacement: approximately 1.261 seconds.
+| Strategy | Execution Time |
+|---|---:|
+| Full Refresh | 2.149 seconds |
+| Incremental Merge | 1.037 seconds |
+| Partition Replacement | 1.261 seconds |
 
-These are measurements from a single local benchmark run. Actual performance can vary with hardware, database configuration, and workload.
+Key observations:
+
+- Incremental Merge was approximately **51.7% faster** than Full Refresh at 100,000 orders.
+- Partition Replacement was approximately **41.3% faster** than Full Refresh.
+- Incremental Merge performed best for the tested workload because it processed only changed and newly inserted records.
+
+These measurements represent a single local benchmark run. Actual performance may vary depending on hardware, database configuration, data distribution, and workload.
 
 ## Limitations
 
@@ -186,4 +223,4 @@ These are measurements from a single local benchmark run. Actual performance can
 
 ## Author
 
-M.Pranathi Reddy.
+M. Pranathi Reddy
