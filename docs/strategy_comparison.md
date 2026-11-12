@@ -499,21 +499,32 @@ Deletion and insertion of affected partitions happen within one transaction. If 
 However, the source must provide complete snapshots for affected partitions. An incomplete snapshot can remove records that are absent from the supplied snapshot.
 
 
+
 ## 11. Automated Testing
 
 Automated tests were implemented using Python's `unittest` framework.
 
-The test suite contains 15 tests across two test modules.
+The test suite contains **24 tests across four test modules**.
 
-### Data Cleaning Tests (5)
+### Data Cleaning Tests (9)
 
 - Duplicate customer detection.
 - Invalid order validation.
 - Invalid order status validation.
 - Missing customer ID validation.
 - Valid customer records.
+- Empty customer dataset handling.
+- Empty order dataset handling.
+- Malformed order values.
+- Invalid customer references.
 
-### Publishing Strategy Tests (10)
+### Ingestion Tests (3)
+
+- Valid CSV schema validation.
+- Detection of missing columns.
+- Detection of unexpected columns.
+
+### Publishing Strategy Tests (11)
 
 - Full Refresh publishing.
 - Incremental insertion of new records.
@@ -525,44 +536,118 @@ The test suite contains 15 tests across two test modules.
 - Incremental Merge rollback.
 - Partition Replacement rollback.
 - Retry after failure and idempotent reruns.
+- Preserving the latest record during out-of-order arrival.
 
-**Test result:** All 15 automated tests passed.
+### Pipeline Tracking Tests (1)
+
+- Logging rejected records with the correct pipeline run ID.
+- Preserving source filename and source record number.
+- Recording record type and rejection reason.
+
+**Test result:** All 24 automated tests passed successfully.
+
+The test suite covers data validation, schema handling, publishing correctness, transaction safety, and pipeline tracking.
+
+---
+
+## 12. Pipeline Run Tracking and Observability
+
+The project implements pipeline execution tracking using SQLite to maintain an execution history for all three publishing strategies.
+
+Two additional database tables support pipeline observability.
+
+### 12.1 Pipeline Runs Table
+
+The `pipeline_runs` table stores execution metadata.
+
+| Column | Description |
+|---|---|
+| `run_id` | Unique pipeline execution identifier |
+| `pipeline_name` | Name of the publishing strategy |
+| `started_at` | Pipeline start timestamp in UTC |
+| `completed_at` | Pipeline completion timestamp in UTC |
+| `status` | Execution status |
+| `input_count` | Total number of input records |
+| `inserted_count` | Number of records loaded into the target |
+| `updated_count` | Number of updates recorded |
+| `rejected_count` | Number of rejected input records |
+| `error_message` | Error details when applicable |
+
+Supported execution statuses:
+
+- `RUNNING`: Pipeline execution has started.
+- `SUCCESS`: Pipeline completed successfully.
+- `MISMATCH`: Final results differ from the reference results.
+- `FAILED`: Pipeline execution encountered an exception.
+
+### 12.2 Rejected Records Table
+
+The `rejected_records` table maintains details about records that fail data validation.
+
+It stores:
+
+- Rejected record identifier.
+- Associated pipeline run ID.
+- Source filename.
+- Source record number.
+- Record type (CUSTOMER or ORDER).
+- Rejection reason.
+- Original record information in JSON format.
+
+This provides traceability and helps identify data-quality issues.
+
+### 12.3 Execution Tracking Process
+
+For each publishing strategy:
+
+1. Create a unique pipeline run record.
+2. Record the start timestamp in UTC.
+3. Store rejected records associated with the run.
+4. Execute the selected publishing strategy.
+5. Validate the resulting target data.
+6. Record the execution status and completion timestamp.
+7. Store execution counts and error information.
+
+If an exception occurs, the run is marked as `FAILED` with the corresponding error message.
+
+### 12.4 Verification Results
+
+The comparison runner was executed successfully for all three strategies.
+
+| Strategy | Run ID | Input Records | Loaded Records | Rejected |
+|---|---:|---:|---:|---:|
+| Full Refresh | 1 | 1,100 | 1,100 | 0 |
+| Incremental Merge | 2 | 1,100 | 1,100 | 0 |
+| Partition Replacement | 3 | 1,100 | 1,100 | 0 |
+
+All three runs completed with `SUCCESS` status.
+
+The database verification confirmed that execution timestamps, record counts, statuses, and error fields were stored correctly.
+
+A separate automated test verified rejected-record logging using a synthetic invalid order.
+
+This implementation improves pipeline observability, execution traceability, and debugging capabilities.
 
 
-
-## 12. Result Equivalence Validation
-
-
+## 13. Result Equivalence Validation
 
 After each benchmark, the final customer and order data from each strategy were compared with the expected final dataset.
 
-
-
 Validation included:
 
-
-
 - Customer record equivalence.
-
 - Order record equivalence.
-
 - Matching record counts.
-
 - Matching final values.
-
 - Successful completion of all strategy runs.
 
-
-
 All 12 runs in the realistic incremental workload benchmark completed successfully, and all strategies produced equivalent final data.
-
-
 
 All 12 runs in the initial-load scalability benchmark also completed successfully with equivalent results.
 
 
 
-## 13. Limitations
+## 14. Limitations
 
 
 
@@ -580,7 +665,7 @@ All 12 runs in the initial-load scalability benchmark also completed successfull
 
 
 
-## 14. Recommendations
+## 15. Recommendations
 
 
 
@@ -608,7 +693,7 @@ Full Refresh remains useful when a complete rebuild is required or when simplici
 
 
 
-## 15. Conclusion
+## 16. Conclusion
 
 
 
