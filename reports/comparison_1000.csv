@@ -1,0 +1,4 @@
+pipeline,records_processed,total_amount,execution_time_seconds,new_records,updated_records,unchanged_records
+Batch Processing,1000,5134106.38,0.00049,0,0,0
+Persistent Incremental,1000,5134106.38,0.117961,1000,0,0
+Streaming Simulation,1000,5134106.38,0.011166,0,0,0

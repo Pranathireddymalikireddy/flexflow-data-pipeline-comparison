@@ -1,0 +1,26 @@
+
+# Virtual environment
+venv/
+.venv/
+
+# Python cache
+__pycache__/
+*.py[cod]
+
+# SQLite database
+database/*.db
+
+# Generated datasets
+data/raw/*
+data/processed/*
+data/rejects/*
+
+# Environment variables
+.env
+
+# IDE files
+.vscode/
+
+# Temporary files
+*.log
+.DS_Store
