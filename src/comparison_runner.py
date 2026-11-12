@@ -2,6 +2,7 @@
 import time
 import sqlite3
 import pandas as pd
+from datetime import datetime, timezone
 
 from src.ingestion import load_customers, load_orders
 from src.cleaning import clean_customers, clean_orders
@@ -14,8 +15,150 @@ from src.schema import get_connection, initialize_database
 from src.config import (
     CUSTOMER_TABLE,
     ORDER_TABLE,
+    RUN_HISTORY_TABLE,
+    REJECT_TABLE,
     REPORTS_DIR
 )
+
+def get_current_timestamp():
+    return datetime.now(timezone.utc).isoformat(
+        timespec="seconds"
+    )
+
+
+def create_pipeline_run(
+    pipeline_name,
+    input_count,
+    rejected_count
+):
+
+    connection = get_connection()
+
+    try:
+        cursor = connection.execute(
+            f"""
+            INSERT INTO {RUN_HISTORY_TABLE} (
+                pipeline_name,
+                started_at,
+                status,
+                input_count,
+                rejected_count
+            )
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (
+                pipeline_name,
+                get_current_timestamp(),
+                "RUNNING",
+                input_count,
+                rejected_count
+            )
+        )
+
+        run_id = cursor.lastrowid
+
+        connection.commit()
+
+        return run_id
+
+    finally:
+        connection.close()
+
+
+def log_rejected_records(
+    run_id,
+    rejected_customers,
+    rejected_orders
+):
+
+    connection = get_connection()
+
+    try:
+        rejected_groups = [
+            ("CUSTOMER", rejected_customers),
+            ("ORDER", rejected_orders)
+        ]
+
+        for record_type, dataframe in rejected_groups:
+
+            for _, record in dataframe.iterrows():
+
+                source_file = record.get("source_file")
+                source_number = record.get(
+                    "source_record_number"
+                )
+
+                connection.execute(
+                    f"""
+                    INSERT INTO {REJECT_TABLE} (
+                        run_id,
+                        source_file,
+                        source_record_number,
+                        record_type,
+                        rejection_reason,
+                        raw_record
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        run_id,
+                        source_file,
+                        None if pd.isna(source_number)
+                        else int(source_number),
+                        record_type,
+                        str(record["rejection_reason"]),
+                        record.to_json()
+                    )
+                )
+
+        connection.commit()
+
+    except Exception:
+        connection.rollback()
+        raise
+
+    finally:
+        connection.close()
+
+def complete_pipeline_run(
+    run_id,
+    status,
+    inserted_count=0,
+    updated_count=0,
+    error_message=None
+):
+
+    connection = get_connection()
+
+    try:
+        connection.execute(
+            f"""
+            UPDATE {RUN_HISTORY_TABLE}
+            SET completed_at = ?,
+                status = ?,
+                inserted_count = ?,
+                updated_count = ?,
+                error_message = ?
+            WHERE run_id = ?
+            """,
+            (
+                get_current_timestamp(),
+                status,
+                inserted_count,
+                updated_count,
+                error_message,
+                run_id
+            )
+        )
+
+        connection.commit()
+
+    except Exception:
+        connection.rollback()
+        raise
+
+    finally:
+        connection.close()
 
 
 def prepare_data():
@@ -44,8 +187,12 @@ def prepare_data():
     print("Rejected customers:", len(rejected_customers))
     print("Rejected orders:", len(rejected_orders))
 
-    return valid_customers, valid_orders
-
+    return (
+    valid_customers,
+    valid_orders,
+    rejected_customers,
+    rejected_orders
+)
 
 def reset_target():
 
@@ -146,11 +293,27 @@ def compare_results(reference, actual):
         return False
 
 
+
 def run_comparison():
 
     initialize_database()
 
-    customers, orders = prepare_data()
+    (
+        customers,
+        orders,
+        rejected_customers,
+        rejected_orders
+    ) = prepare_data()
+
+    input_count = (
+    len(customers)
+    + len(orders)
+    + len(rejected_customers)
+    + len(rejected_orders)
+)
+    rejected_count = (
+        len(rejected_customers) + len(rejected_orders)
+    )
 
     strategies = [
         ("Full Refresh", full_refresh),
@@ -159,8 +322,6 @@ def run_comparison():
     ]
 
     results = []
-    snapshots = {}
-
     reference_snapshot = None
 
     for strategy_name, strategy_function in strategies:
@@ -169,55 +330,93 @@ def run_comparison():
         print("Running:", strategy_name)
         print("=" * 55)
 
-        # Give every strategy the same initial target state
         reset_target()
 
-        start_time = time.perf_counter()
-
-        strategy_function(customers, orders)
-
-        execution_time = time.perf_counter() - start_time
-
-        target_customers, target_orders = read_target()
-
-        metrics = calculate_metrics(
-            target_customers,
-            target_orders
+        run_id = create_pipeline_run(
+            strategy_name,
+            input_count,
+            rejected_count
         )
 
-        snapshots[strategy_name] = (
-            target_customers,
-            target_orders
-        )
-
-        if reference_snapshot is None:
-            reference_snapshot = snapshots[strategy_name]
-            equivalent = True
-        else:
-            equivalent = compare_results(
-                reference_snapshot,
-                snapshots[strategy_name]
+        try:
+            log_rejected_records(
+                run_id,
+                rejected_customers,
+                rejected_orders
             )
 
-        results.append({
-            "strategy": strategy_name,
-            "execution_time_seconds": round(
-                execution_time, 6
-            ),
-            "customer_count": metrics["customer_count"],
-            "order_count": metrics["order_count"],
-            "total_amount": metrics["total_amount"],
-            "partition_count": metrics["partition_count"],
-            "results_equivalent": equivalent,
-            "status": "SUCCESS" if equivalent else "MISMATCH"
-        })
+            start_time = time.perf_counter()
 
-        print("Execution time:", round(execution_time, 6), "seconds")
-        print("Customers:", metrics["customer_count"])
-        print("Orders:", metrics["order_count"])
-        print("Total amount:", metrics["total_amount"])
-        print("Partitions:", metrics["partition_count"])
-        print("Equivalent to Full Refresh:", equivalent)
+            strategy_function(customers, orders)
+
+            execution_time = time.perf_counter() - start_time
+
+            target_customers, target_orders = read_target()
+
+            metrics = calculate_metrics(
+                target_customers,
+                target_orders
+            )
+
+            if reference_snapshot is None:
+                equivalent = True
+                reference_snapshot = (
+                    target_customers,
+                    target_orders
+                )
+            else:
+                equivalent = compare_results(
+                    reference_snapshot,
+                    (target_customers, target_orders)
+                )
+
+            status = "SUCCESS" if equivalent else "MISMATCH"
+
+            complete_pipeline_run(
+                run_id,
+                status,
+                inserted_count=(
+                    len(target_customers) + len(target_orders)
+                ),
+                updated_count=0,
+                error_message=(
+                    None if equivalent
+                    else "Strategy results differ from Full Refresh"
+                )
+            )
+
+            results.append({
+                "strategy": strategy_name,
+                "run_id": run_id,
+                "execution_time_seconds": round(
+                    execution_time, 6
+                ),
+                "customer_count": metrics["customer_count"],
+                "order_count": metrics["order_count"],
+                "total_amount": metrics["total_amount"],
+                "partition_count": metrics["partition_count"],
+                "results_equivalent": equivalent,
+                "status": status
+            })
+
+            print("Run ID:", run_id)
+            print("Execution time:", round(execution_time, 6), "seconds")
+            print("Customers:", metrics["customer_count"])
+            print("Orders:", metrics["order_count"])
+            print("Total amount:", metrics["total_amount"])
+            print("Partitions:", metrics["partition_count"])
+            print("Equivalent to Full Refresh:", equivalent)
+
+        except Exception as error:
+
+            complete_pipeline_run(
+                run_id,
+                "FAILED",
+                error_message=str(error)
+            )
+
+            print("Pipeline failed:", str(error))
+            raise
 
     report = pd.DataFrame(results)
 
@@ -241,7 +440,6 @@ def run_comparison():
         raise AssertionError(
             "At least one strategy produced different results."
         )
-
 
 if __name__ == "__main__":
     run_comparison()

@@ -39,13 +39,25 @@ def load_csv(file_path, required_columns, dataset_name):
             f"Malformed {dataset_name} CSV: {error}"
         )
 
-    missing_columns = set(required_columns) - set(data.columns)
+    
+    expected_columns = set(required_columns)
+    actual_columns = set(data.columns)
+
+    missing_columns = expected_columns - actual_columns
+    unexpected_columns = actual_columns - expected_columns
 
     if missing_columns:
         raise ValueError(
             f"{dataset_name} is missing columns: "
             f"{sorted(missing_columns)}"
         )
+
+    if unexpected_columns:
+        raise ValueError(
+            f"{dataset_name} has unexpected columns: "
+            f"{sorted(unexpected_columns)}"
+        )
+
 
     # Add source traceability information
     data["source_file"] = file_path.name

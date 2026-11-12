@@ -328,6 +328,44 @@ class TestPublishStrategies(unittest.TestCase):
 
         self.assertEqual(counts["orders"], 2)
 
+    def test_out_of_order_arrival_preserves_latest_record(self):
+
+        customers = create_customers("C001")
+
+        initial_orders = create_orders([
+            (1, "C001", "2026-01-01", 1000,
+             "Pending", "2026-01-01 10:00:00")
+        ])
+
+        full_refresh(customers, initial_orders)
+
+        # First, a newer version arrives.
+        newer_orders = create_orders([
+            (1, "C001", "2026-01-01", 2000,
+             "Completed", "2026-01-01 12:00:00")
+        ])
+
+        incremental_merge(customers, newer_orders)
+
+        # Then, an older version arrives late.
+        late_orders = create_orders([
+            (1, "C001", "2026-01-01", 500,
+             "Pending", "2026-01-01 09:00:00")
+        ])
+
+        incremental_merge(customers, late_orders)
+
+        result = self.get_orders()
+
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0][3], 2000)
+        self.assertEqual(result[0][4], "Completed")
+        self.assertEqual(
+            result[0][5],
+            "2026-01-01 12:00:00"
+        )
+
+
 
 
 if __name__ == "__main__":
