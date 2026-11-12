@@ -1,0 +1,4 @@
+strategy,execution_time_seconds,customer_count,order_count,total_amount,partition_count,results_equivalent,status
+Full Refresh,0.027514,100,1000,5134106.38,30,True,SUCCESS
+Incremental Merge,0.024816,100,1000,5134106.38,30,True,SUCCESS
+Partition Replacement,0.023358,100,1000,5134106.38,30,True,SUCCESS

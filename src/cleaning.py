@@ -2,22 +2,12 @@
 import pandas as pd
 
 from src.ingestion import load_customers, load_orders
-from src.config import RAW_DIR
-
-
-PROJECT_ROOT = RAW_DIR.parent.parent
-
-PROCESSED_DIR = PROJECT_ROOT / "data" / "processed"
-REJECTS_DIR = PROJECT_ROOT / "data" / "rejects"
-
-
-def check_columns(df, required_columns, dataset_name):
-    missing = set(required_columns) - set(df.columns)
-
-    if missing:
-        raise ValueError(
-            f"{dataset_name} is missing columns: {missing}"
-        )
+from src.config import (
+    PROCESSED_DIR,
+    REJECTS_DIR,
+    ALLOWED_ORDER_STATUSES,
+    MIN_ORDER_AMOUNT
+)
 
 
 def add_reason(reasons, mask, message):
@@ -32,21 +22,18 @@ def clean_customers(customers):
 
     customers = customers.copy()
 
-    check_columns(
-        customers,
-        ["customer_id"],
-        "Customers"
+    reasons = pd.Series(
+        "",
+        index=customers.index,
+        dtype="string"
     )
 
     customers["customer_id"] = (
-        customers["customer_id"].astype("string").str.strip()
+        customers["customer_id"]
+        .astype("string")
+        .str.strip()
+        .replace("", pd.NA)
     )
-
-    customers["customer_id"] = customers["customer_id"].replace(
-        "", pd.NA
-    )
-
-    reasons = pd.Series("", index=customers.index, dtype="string")
 
     add_reason(
         reasons,
@@ -63,11 +50,10 @@ def clean_customers(customers):
 
     customers["rejection_reason"] = reasons
 
-    valid = customers[reasons == ""].drop(
-        columns=["rejection_reason"]
-    )
+    valid = customers[reasons == ""].copy()
+    rejected = customers[reasons != ""].copy()
 
-    rejected = customers[reasons != ""]
+    valid = valid.drop(columns=["rejection_reason"])
 
     return valid, rejected
 
@@ -76,61 +62,73 @@ def clean_orders(orders, valid_customer_ids):
 
     orders = orders.copy()
 
-    check_columns(
-        orders,
-        [
-            "order_id",
-            "customer_id",
-            "order_date",
-            "amount",
-            "status",
-            "updated_at"
-        ],
-        "Orders"
+    reasons = pd.Series(
+        "",
+        index=orders.index,
+        dtype="string"
     )
 
+    # Clean customer ID and status
     orders["customer_id"] = (
-        orders["customer_id"].astype("string").str.strip()
-    )
-
-    orders["customer_id"] = orders["customer_id"].replace(
-        "", pd.NA
-    )
-
-    orders["amount"] = pd.to_numeric(
-        orders["amount"], errors="coerce"
-    )
-
-    orders["order_date_parsed"] = pd.to_datetime(
-        orders["order_date"], errors="coerce"
-    )
-
-    orders["updated_at_parsed"] = pd.to_datetime(
-        orders["updated_at"], errors="coerce"
+        orders["customer_id"]
+        .astype("string")
+        .str.strip()
+        .replace("", pd.NA)
     )
 
     orders["status"] = (
-        orders["status"].astype("string").str.strip().str.title()
+        orders["status"]
+        .astype("string")
+        .str.strip()
+        .str.title()
     )
 
-    allowed_statuses = [
-        "Pending",
-        "Shipped",
-        "Delivered",
-        "Cancelled"
-    ]
+    # Convert data types
+    orders["order_id"] = pd.to_numeric(
+        orders["order_id"],
+        errors="coerce"
+    )
 
-    reasons = pd.Series("", index=orders.index, dtype="string")
+    orders["amount"] = pd.to_numeric(
+        orders["amount"],
+        errors="coerce"
+    )
 
+    orders["order_date_parsed"] = pd.to_datetime(
+        orders["order_date"],
+        errors="coerce"
+    )
+
+    orders["updated_at_parsed"] = pd.to_datetime(
+        orders["updated_at"],
+        errors="coerce"
+    )
+
+    # Required field validation
     add_reason(
         reasons,
         orders["order_id"].isna(),
-        "Missing order ID"
+        "Missing or invalid order ID"
     )
 
     add_reason(
         reasons,
-        orders["order_id"].duplicated(keep="first"),
+        orders["order_id"].notna()
+        & (orders["order_id"] % 1 != 0),
+        "Order ID must be an integer"
+    )
+
+    add_reason(
+        reasons,
+        orders["order_id"].notna()
+        & (orders["order_id"] <= 0),
+        "Order ID must be positive"
+    )
+
+    add_reason(
+        reasons,
+        orders["order_id"].notna()
+        & orders["order_id"].duplicated(keep="first"),
         "Duplicate order ID"
     )
 
@@ -142,13 +140,15 @@ def clean_orders(orders, valid_customer_ids):
 
     add_reason(
         reasons,
-        ~orders["customer_id"].isin(valid_customer_ids),
+        orders["customer_id"].notna()
+        & ~orders["customer_id"].isin(valid_customer_ids),
         "Customer ID does not exist"
     )
 
     add_reason(
         reasons,
-        orders["amount"].isna() | (orders["amount"] <= 0),
+        orders["amount"].isna()
+        | (orders["amount"] <= MIN_ORDER_AMOUNT),
         "Invalid order amount"
     )
 
@@ -167,14 +167,18 @@ def clean_orders(orders, valid_customer_ids):
     add_reason(
         reasons,
         orders["status"].isna()
-        | ~orders["status"].isin(allowed_statuses),
+        | ~orders["status"].isin(ALLOWED_ORDER_STATUSES),
         "Invalid order status"
     )
 
+    # Separate valid and rejected records
     orders["rejection_reason"] = reasons
 
     valid = orders[reasons == ""].copy()
     rejected = orders[reasons != ""].copy()
+
+    # Normalize valid output
+    valid["order_id"] = valid["order_id"].astype("int64")
 
     valid["order_date"] = (
         valid["order_date_parsed"].dt.strftime("%Y-%m-%d")
@@ -187,8 +191,19 @@ def clean_orders(orders, valid_customer_ids):
     )
 
     valid = valid.drop(
-        columns=["order_date_parsed", "updated_at_parsed",
-                 "rejection_reason"]
+        columns=[
+            "order_date_parsed",
+            "updated_at_parsed",
+            "rejection_reason"
+        ]
+    )
+
+    # Keep parsed fields out of rejected output too
+    rejected = rejected.drop(
+        columns=[
+            "order_date_parsed",
+            "updated_at_parsed"
+        ]
     )
 
     return valid, rejected
@@ -196,7 +211,7 @@ def clean_orders(orders, valid_customer_ids):
 
 def main():
 
-    print("Starting Data Cleaning and Validation...")
+    print("Starting Data Cleaning and Validation...\n")
 
     PROCESSED_DIR.mkdir(parents=True, exist_ok=True)
     REJECTS_DIR.mkdir(parents=True, exist_ok=True)
@@ -204,28 +219,31 @@ def main():
     customers = load_customers()
     orders = load_orders()
 
-    clean_customer_data, rejected_customers = (
-        clean_customers(customers)
+    valid_customers, rejected_customers = clean_customers(
+        customers
     )
 
     valid_customer_ids = set(
-        clean_customer_data["customer_id"]
+        valid_customers["customer_id"].dropna()
     )
 
-    clean_order_data, rejected_orders = clean_orders(
-        orders, valid_customer_ids
+    valid_orders, rejected_orders = clean_orders(
+        orders,
+        valid_customer_ids
     )
 
-    clean_customer_data.to_csv(
+    # Save cleaned data
+    valid_customers.to_csv(
         PROCESSED_DIR / "customers_clean.csv",
         index=False
     )
 
-    clean_order_data.to_csv(
+    valid_orders.to_csv(
         PROCESSED_DIR / "orders_clean.csv",
         index=False
     )
 
+    # Save rejected data with reasons and source information
     rejected_customers.to_csv(
         REJECTS_DIR / "customers_rejected.csv",
         index=False
@@ -236,18 +254,27 @@ def main():
         index=False
     )
 
-    print("\nData Cleaning Completed Successfully!")
-
     print("\nCUSTOMER SUMMARY")
-    print("Valid customers:", len(clean_customer_data))
-    print("Rejected customers:", len(rejected_customers))
+    print("Input:", len(customers))
+    print("Valid:", len(valid_customers))
+    print("Rejected:", len(rejected_customers))
 
     print("\nORDER SUMMARY")
-    print("Valid orders:", len(clean_order_data))
-    print("Rejected orders:", len(rejected_orders))
+    print("Input:", len(orders))
+    print("Valid:", len(valid_orders))
+    print("Rejected:", len(rejected_orders))
 
-    print("\nCleaned files saved in:", PROCESSED_DIR)
-    print("Rejected files saved in:", REJECTS_DIR)
+    print("\nReconciliation")
+    print(
+        "Customers reconciled:",
+        len(customers) == len(valid_customers) + len(rejected_customers)
+    )
+    print(
+        "Orders reconciled:",
+        len(orders) == len(valid_orders) + len(rejected_orders)
+    )
+
+    print("\nData cleaning completed successfully!")
 
 
 if __name__ == "__main__":
