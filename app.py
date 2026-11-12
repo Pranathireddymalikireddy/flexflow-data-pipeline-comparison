@@ -104,7 +104,7 @@ if missing_scalability or missing_incremental:
 # Clean and Prepare Data
 # --------------------------------------------------
 
-for dataframe in [scalability, incremental]:
+def clean_benchmark_data(dataframe):
 
     dataframe["dataset_size"] = pd.to_numeric(
         dataframe["dataset_size"], errors="coerce"
@@ -114,30 +114,17 @@ for dataframe in [scalability, incremental]:
         dataframe["runtime_seconds"], errors="coerce"
     )
 
-    dataframe.dropna(
-        subset=["dataset_size", "runtime_seconds"],
-        inplace=True
-    )
+    dataframe = dataframe.dropna(
+        subset=["dataset_size", "runtime_seconds"]
+    ).copy()
 
     dataframe["dataset_size"] = dataframe["dataset_size"].astype(int)
 
+    return dataframe
 
-scalability["orders_loaded"] = pd.to_numeric(
-    scalability["orders_loaded"], errors="coerce"
-)
 
-scalability["total_amount"] = pd.to_numeric(
-    scalability["total_amount"], errors="coerce"
-)
-
-incremental["delta_orders"] = pd.to_numeric(
-    incremental["delta_orders"], errors="coerce"
-)
-
-incremental["affected_partitions"] = pd.to_numeric(
-    incremental["affected_partitions"], errors="coerce"
-)
-
+scalability = clean_benchmark_data(scalability)
+incremental = clean_benchmark_data(incremental)
 
 # --------------------------------------------------
 # Sidebar Filters
@@ -420,7 +407,7 @@ with tab3:
         scalability_filtered.sort_values(
             ["dataset_size", "strategy"]
         ),
-        use_container_width=True,
+        width="stretch",
         hide_index=True
     )
 
@@ -430,7 +417,7 @@ with tab3:
         incremental_filtered.sort_values(
             ["dataset_size", "strategy"]
         ),
-        use_container_width=True,
+        width="stretch",
         hide_index=True
     )
 
